@@ -29,11 +29,16 @@ const syncFile = async (sourcePath, targetPath) => {
 	}
 };
 
-const syncDir = async (sourceDir, targetDir) => {
+const syncDir = async (sourceDir, targetDir, options = {}) => {
+	const { isRoot = false, skip = new Set() } = options;
 	await mkdir(targetDir, { recursive: true });
 
 	const entries = await readdir(sourceDir, { withFileTypes: true });
 	for (const entry of entries) {
+		if (isRoot && skip.has(entry.name)) {
+			continue;
+		}
+
 		const sourcePath = resolve(sourceDir, entry.name);
 		const targetPath = resolve(targetDir, entry.name);
 
@@ -49,7 +54,8 @@ const syncDir = async (sourceDir, targetDir) => {
 };
 
 const syncStatic = async () => {
-	await syncDir(sourceRoot, targetRoot);
+	await syncDir(sourceRoot, targetRoot, { isRoot: true, skip: new Set(['static']) });
+	await syncDir(resolve(sourceRoot, 'static'), targetRoot);
 	if (!enablePyodide) {
 		await rm(resolve(targetRoot, 'pyodide'), { recursive: true, force: true });
 	}

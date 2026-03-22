@@ -97,6 +97,53 @@ class TestAuths(AbstractPostgresTest):
         assert data["token"] is not None and len(data["token"]) > 0
         assert data["token_type"] == "Bearer"
 
+    def test_signin_without_auth_bootstraps_admin_without_fixed_password(self, monkeypatch):
+        from open_webui.models.auths import Auth, get_db
+        from open_webui.routers import auths as auths_router
+
+        monkeypatch.setattr(auths_router, "WEBUI_AUTH", False)
+
+        response = self.fast_api_client.post(
+            self.create_url("/signin"),
+            json={"email": "", "password": ""},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "admin@localhost"
+        assert data["role"] == "admin"
+
+        with get_db() as db:
+            auth = db.query(Auth).filter_by(email="admin@localhost").first()
+
+        assert auth is not None
+        assert auth.password != "admin"
+
+    def test_signin_without_auth_uses_existing_first_user(self, monkeypatch):
+        from open_webui.routers import auths as auths_router
+        from open_webui.utils.auth import get_password_hash
+
+        monkeypatch.setattr(auths_router, "WEBUI_AUTH", False)
+
+        user = self.auths.insert_new_auth(
+            email="owner@example.com",
+            password=get_password_hash("super-secret"),
+            name="Owner",
+            profile_image_url="/user.png",
+            role="admin",
+        )
+
+        response = self.fast_api_client.post(
+            self.create_url("/signin"),
+            json={"email": "", "password": ""},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == user.id
+        assert data["email"] == "owner@example.com"
+        assert data["role"] == "admin"
+
     def test_signup(self):
         response = self.fast_api_client.post(
             self.create_url("/signup"),
