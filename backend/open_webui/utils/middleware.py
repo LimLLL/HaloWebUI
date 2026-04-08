@@ -1426,12 +1426,10 @@ async def _prepare_openai_native_file_inputs(
     )
 
     if not effective_model_id:
-        log.info(
-            "[OPENAI] Native file input upload skipped: failed to resolve model id (requested=%s, model.id=%s)",
-            requested_model_id,
-            str((model or {}).get("id") or "").strip(),
+        raise HTTPException(
+            status_code=400,
+            detail="Native file input upload requires a valid model id.",
         )
-        return
 
     model_id = effective_model_id
     url_idx, url, key, api_config = _resolve_openai_connection_by_model_id(

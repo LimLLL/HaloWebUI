@@ -700,13 +700,11 @@ async def _upload_file_to_openai(
     )
 
     upload_model_id = str(model_id or "").strip()
-    include_model = bool(
-        upload_model_id
-        and (
-            _coerce_bool((api_config or {}).get("native_file_upload_requires_model"), False)
-            or not _is_official_openai_connection(base_url)
+    if not upload_model_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Model is required for OpenAI native file uploads.",
         )
-    )
 
     def _extract_error_message(data) -> Optional[str]:
         message = None
@@ -720,21 +718,12 @@ async def _upload_file_to_openai(
                 message = data.get("message")
         return str(message).strip() if message else None
 
-    def _looks_like_missing_upload_model(message: Optional[str]) -> bool:
-        text = str(message or "").strip().lower()
-        if not text:
-            return False
-        return ("model" in text and "required" in text) or (
-            "模型" in text and ("不能为空" in text or "未指定" in text)
-        )
-
     timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-        async def _post_upload(force_include_model: bool = False) -> tuple[int, Any]:
+        async def _post_upload() -> tuple[int, Any]:
             form = aiohttp.FormData()
             form.add_field("purpose", purpose)
-            if upload_model_id and (include_model or force_include_model):
-                form.add_field("model", upload_model_id)
+            form.add_field("model", upload_model_id)
 
             with open(local_path, "rb") as file_handle:
                 form.add_field(
@@ -747,17 +736,8 @@ async def _upload_file_to_openai(
                     data = await response.json(content_type=None)
                     return response.status, data
 
-        status_code, data = await _post_upload(False)
+        status_code, data = await _post_upload()
         message = _extract_error_message(data)
-
-        if (
-            status_code >= 400
-            and upload_model_id
-            and not include_model
-            and _looks_like_missing_upload_model(message)
-        ):
-            status_code, data = await _post_upload(True)
-            message = _extract_error_message(data)
 
         if status_code >= 400:
             raise HTTPException(
