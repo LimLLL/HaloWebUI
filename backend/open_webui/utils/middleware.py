@@ -1386,13 +1386,28 @@ async def _prepare_openai_native_file_inputs(
     if not base_urls:
         return
 
-    model_id = form_data.get("model") or (model or {}).get("id") or ""
+    requested_model_id = str(form_data.get("model") or "").strip()
+    effective_model_id = requested_model_id
+
+    model_info = Models.get_model_by_id(requested_model_id) if requested_model_id else None
+    if model_info and model_info.base_model_id:
+        effective_model_id = str(model_info.base_model_id).strip()
+    elif not effective_model_id:
+        effective_model_id = str((model or {}).get("id") or "").strip()
+        if not effective_model_id:
+            effective_model_id = str((model or {}).get("original_id") or "").strip()
+        if not effective_model_id and isinstance((model or {}).get("info"), dict):
+            effective_model_id = str((model.get("info") or {}).get("base_model_id") or "").strip()
+
+    model_id = effective_model_id
     url_idx, url, key, api_config = _resolve_openai_connection_by_model_id(
         model_id, base_urls, keys, cfgs
     )
     if not url:
         return
     upload_model_id = strip_model_prefix(model_id, api_config.get("_resolved_prefix_id"))
+    if not str(upload_model_id or "").strip():
+        upload_model_id = model_id
 
     if not _should_use_responses_api(url, api_config, model_id, native_web_search=False):
         return
