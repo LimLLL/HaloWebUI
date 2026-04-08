@@ -1400,6 +1400,7 @@ async def _prepare_openai_native_file_inputs(
     )
 
     def _resolve_upload_model_id(candidate_ids: list[str]) -> str:
+        fallback_model_id = ""
         for candidate in candidate_ids:
             normalized = str(candidate or "").strip()
             if not normalized:
@@ -1409,8 +1410,9 @@ async def _prepare_openai_native_file_inputs(
                 resolved = str(model_info.base_model_id).strip()
                 if resolved:
                     return resolved
-            return normalized
-        return ""
+            if not fallback_model_id:
+                fallback_model_id = normalized
+        return fallback_model_id
 
     effective_model_id = _resolve_upload_model_id(
         [
