@@ -1392,6 +1392,7 @@ async def _prepare_openai_native_file_inputs(
     )
     if not url:
         return
+    upload_model_id = strip_model_prefix(model_id, api_config.get("_resolved_prefix_id"))
 
     if not _should_use_responses_api(url, api_config, model_id, native_web_search=False):
         return
@@ -1460,6 +1461,7 @@ async def _prepare_openai_native_file_inputs(
                     local_path=local_path,
                     filename=file_obj.filename or "file",
                     content_type=content_type,
+                    model_id=upload_model_id,
                     user=user,
                 )
                 _set_cached_openai_file_id(
