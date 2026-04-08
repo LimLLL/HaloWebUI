@@ -1387,10 +1387,10 @@ async def _prepare_openai_native_file_inputs(
         return
 
     requested_model_id = str(form_data.get("model") or "").strip()
-    metadata_model = metadata.get("model") if isinstance(metadata, dict) else None
-    metadata_model = metadata_model if isinstance(metadata_model, dict) else {}
-    state_model = getattr(getattr(request, "state", None), "model", None)
-    state_model = state_model if isinstance(state_model, dict) else {}
+    metadata_model_raw = metadata.get("model") if isinstance(metadata, dict) else None
+    metadata_model = metadata_model_raw if isinstance(metadata_model_raw, dict) else {}
+    state_model_raw = getattr(getattr(request, "state", None), "model", None)
+    state_model = state_model_raw if isinstance(state_model_raw, dict) else {}
 
     model_info_dict = (model or {}).get("info")
     model_base_model_id = (
