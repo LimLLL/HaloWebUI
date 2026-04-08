@@ -1387,7 +1387,10 @@ async def _prepare_openai_native_file_inputs(
         return
 
     requested_model_id = str(form_data.get("model") or "").strip()
-    effective_model_id = requested_model_id
+    metadata_model = metadata.get("model") if isinstance(metadata, dict) else None
+    metadata_model = metadata_model if isinstance(metadata_model, dict) else {}
+    state_model = getattr(getattr(request, "state", None), "model", None)
+    state_model = state_model if isinstance(state_model, dict) else {}
 
     model_info_dict = (model or {}).get("info")
     model_base_model_id = (
@@ -1396,17 +1399,39 @@ async def _prepare_openai_native_file_inputs(
         else ""
     )
 
-    if model_base_model_id:
-        effective_model_id = model_base_model_id
-    elif requested_model_id:
-        model_info = Models.get_model_by_id(requested_model_id)
-        if model_info and model_info.base_model_id:
-            effective_model_id = str(model_info.base_model_id).strip()
+    def _resolve_upload_model_id(candidate_ids: list[str]) -> str:
+        for candidate in candidate_ids:
+            normalized = str(candidate or "").strip()
+            if not normalized:
+                continue
+            model_info = Models.get_model_by_id(normalized)
+            if model_info and model_info.base_model_id:
+                resolved = str(model_info.base_model_id).strip()
+                if resolved:
+                    return resolved
+            return normalized
+        return ""
+
+    effective_model_id = _resolve_upload_model_id(
+        [
+            model_base_model_id,
+            requested_model_id,
+            (model or {}).get("id"),
+            (model or {}).get("original_id"),
+            metadata_model.get("id"),
+            metadata_model.get("original_id"),
+            state_model.get("id"),
+            state_model.get("original_id"),
+        ]
+    )
 
     if not effective_model_id:
-        effective_model_id = str((model or {}).get("id") or "").strip()
-        if not effective_model_id:
-            effective_model_id = str((model or {}).get("original_id") or "").strip()
+        log.info(
+            "[OPENAI] Native file input upload skipped: failed to resolve model id (requested=%s, model.id=%s)",
+            requested_model_id,
+            str((model or {}).get("id") or "").strip(),
+        )
+        return
 
     model_id = effective_model_id
     url_idx, url, key, api_config = _resolve_openai_connection_by_model_id(

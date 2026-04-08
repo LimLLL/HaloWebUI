@@ -6,7 +6,7 @@ import secrets
 import time
 import uuid
 from pathlib import Path
-from typing import Literal, Optional, overload
+from typing import Any, Literal, Optional, overload
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 import aiohttp
@@ -699,53 +699,79 @@ async def _upload_file_to_openai(
         content_type=None,
     )
 
+    upload_model_id = str(model_id or "").strip()
+    include_model = bool(
+        upload_model_id
+        and (
+            _coerce_bool((api_config or {}).get("native_file_upload_requires_model"), False)
+            or not _is_official_openai_connection(base_url)
+        )
+    )
+
+    def _extract_error_message(data) -> Optional[str]:
+        message = None
+        if isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict):
+                message = error.get("message")
+            elif isinstance(error, str):
+                message = error
+            else:
+                message = data.get("message")
+        return str(message).strip() if message else None
+
+    def _looks_like_missing_upload_model(message: Optional[str]) -> bool:
+        text = str(message or "").strip().lower()
+        if not text:
+            return False
+        return ("model" in text and "required" in text) or (
+            "模型" in text and ("不能为空" in text or "未指定" in text)
+        )
+
     timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-        form = aiohttp.FormData()
-        form.add_field("purpose", purpose)
-        upload_model_id = str(model_id or "").strip()
-        include_model = bool(
-            upload_model_id
-            and (
-                _coerce_bool((api_config or {}).get("native_file_upload_requires_model"), False)
-                or not _is_official_openai_connection(base_url)
+        async def _post_upload(force_include_model: bool = False) -> tuple[int, Any]:
+            form = aiohttp.FormData()
+            form.add_field("purpose", purpose)
+            if upload_model_id and (include_model or force_include_model):
+                form.add_field("model", upload_model_id)
+
+            with open(local_path, "rb") as file_handle:
+                form.add_field(
+                    "file",
+                    file_handle,
+                    filename=filename,
+                    content_type=content_type or "application/octet-stream",
+                )
+                async with session.post(upload_url, data=form, headers=headers) as response:
+                    data = await response.json(content_type=None)
+                    return response.status, data
+
+        status_code, data = await _post_upload(False)
+        message = _extract_error_message(data)
+
+        if (
+            status_code >= 400
+            and upload_model_id
+            and not include_model
+            and _looks_like_missing_upload_model(message)
+        ):
+            status_code, data = await _post_upload(True)
+            message = _extract_error_message(data)
+
+        if status_code >= 400:
+            raise HTTPException(
+                status_code=status_code,
+                detail=message or str(data)[:500],
             )
-        )
-        if include_model:
-            form.add_field("model", upload_model_id)
 
-        with open(local_path, "rb") as file_handle:
-            form.add_field(
-                "file",
-                file_handle,
-                filename=filename,
-                content_type=content_type or "application/octet-stream",
+        if not isinstance(data, dict) or not data.get("id"):
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid response from OpenAI Files API",
             )
 
-            async with session.post(upload_url, data=form, headers=headers) as response:
-                data = await response.json(content_type=None)
-                if response.status >= 400:
-                    message = None
-                    if isinstance(data, dict):
-                        error = data.get("error")
-                        if isinstance(error, dict):
-                            message = error.get("message")
-                        elif isinstance(error, str):
-                            message = error
-                        else:
-                            message = data.get("message")
-                    raise HTTPException(
-                        status_code=response.status,
-                        detail=message or str(data)[:500],
-                    )
-
-                if not isinstance(data, dict) or not data.get("id"):
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Invalid response from OpenAI Files API",
-                    )
-
-                return str(data["id"])
+        return str(data["id"])
 
 
 async def _safe_read_upstream_body(response: aiohttp.ClientResponse):
