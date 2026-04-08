@@ -26,6 +26,7 @@ from fastapi.concurrency import run_in_threadpool
 from starlette.responses import Response, StreamingResponse
 
 
+from open_webui.storage.provider import Storage
 from open_webui.models.chats import Chats
 from open_webui.models.files import Files
 from open_webui.models.users import Users
