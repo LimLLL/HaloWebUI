@@ -685,6 +685,7 @@ async def _upload_file_to_openai(
     local_path: str,
     filename: str,
     content_type: str,
+    model_id: Optional[str] = None,
     purpose: str = "user_data",
     user: Optional[UserModel] = None,
 ) -> str:
@@ -702,6 +703,16 @@ async def _upload_file_to_openai(
     async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
         form = aiohttp.FormData()
         form.add_field("purpose", purpose)
+        upload_model_id = str(model_id or "").strip()
+        include_model = bool(
+            upload_model_id
+            and (
+                _coerce_bool((api_config or {}).get("native_file_upload_requires_model"), False)
+                or not _is_official_openai_connection(base_url)
+            )
+        )
+        if include_model:
+            form.add_field("model", upload_model_id)
 
         with open(local_path, "rb") as file_handle:
             form.add_field(
